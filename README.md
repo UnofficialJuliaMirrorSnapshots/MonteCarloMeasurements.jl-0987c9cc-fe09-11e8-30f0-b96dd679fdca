@@ -3,11 +3,11 @@
 [![Build Status](https://travis-ci.org/baggepinnen/MonteCarloMeasurements.jl.svg?branch=master)](https://travis-ci.org/baggepinnen/MonteCarloMeasurements.jl)
 [![codecov](https://codecov.io/gh/baggepinnen/MonteCarloMeasurements.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/baggepinnen/MonteCarloMeasurements.jl)
 
-This package provides two types `Particles <: Real` and `StaticParticles <: Real` that represents a distribution of a floating point number, kind of like the type `Measurement` from [Measurements.jl](https://github.com/JuliaPhysics/Measurements.jl). The difference compared to a `Measurement` is that `Particles` represent the distribution using a vector of unweighted particles, and can thus represent arbitrary distributions and handles nonlinear uncertainty propagation well. Functions like `f(x) = x²` or `f(x) = sign(x)` at `x=0`, are not handled well using linear uncertainty propagation ala [Measurements.jl](https://github.com/JuliaPhysics/Measurements.jl). The goal is to have a number of this type behave just as any other number while partaking in calculations. After a calculation, the `mean`, `std` etc. can be extracted from the number using the corresponding functions. `Particles` also interact with Distributions.jl, so that you can call, e.g., `Normal(p)` and get back a `Normal` type from distributions or `fit(Gamma, p)` to get a `Gamma`distribution. Particles can also be iterated, asked for `maximum/minimum`, `quantile` etc. If particles are plotted with `plot(p)`, a histogram is displayed. This requires Plots.jl.
+This package provides three types `Particles`, `StaticParticles` and `WeightedParticles`, all `<: Real`, that represent a distribution of a floating point number, kind of like the type `Measurement` from [Measurements.jl](https://github.com/JuliaPhysics/Measurements.jl). The difference compared to a `Measurement` is that `Particles` represent the distribution using a vector of unweighted particles, and can thus represent arbitrary distributions and handles nonlinear uncertainty propagation well. Functions like `f(x) = x²` or `f(x) = sign(x)` at `x=0`, are not handled well using linear uncertainty propagation ala [Measurements.jl](https://github.com/JuliaPhysics/Measurements.jl). The goal is to have a number of this type behave just as any other number while partaking in calculations. After a calculation, the `mean`, `std` etc. can be extracted from the number using the corresponding functions. `Particles` also interact with Distributions.jl, so that you can call, e.g., `Normal(p)` and get back a `Normal` type from distributions or `fit(Gamma, p)` to get a `Gamma`distribution. Particles can also be iterated, asked for `maximum/minimum`, `quantile` etc. If particles are plotted with `plot(p)`, a histogram is displayed. This requires Plots.jl.
 
 ## Basic Examples
 ```julia
-using MonteCarloMeasurements
+using MonteCarloMeasurements, Distributions
 using MonteCarloMeasurements: ±
 
 julia> 1 ± 0.1
@@ -53,7 +53,7 @@ julia> Particles(100, MvNormal(2,1)) # Multivariate create vectors of correlated
 ```
 
 ## Why
-Convenience. Also, the benefit of using this number type instead of manually calling a function `f` with perturbed inputs is that, at least in theory, each intermediate operation on a `Particles` can exploit SIMD, since it's performed over a vector. If the function `f` is called several times, however, the compiler might not be smart enough to SIMD the entire thing. Further, any dynamic dispatch is only paid for once, whereas it would be paid for `N` times if doing things manually. One could perhaps also make an argument for cache locality being favorable for the `Particles` type, but I'm not sure this holds for all examples. A benchmark example (more further down)
+Convenience. Also, the benefit of using this number type instead of manually calling a function `f` with perturbed inputs is that, at least in theory, each intermediate operation on a `Particles` can exploit SIMD, since it's performed over a vector. If the function `f` is called several times, however, the compiler might not be smart enough to SIMD the entire thing. Further, any dynamic dispatch is only paid for once, whereas it would be paid for `N` times if doing things manually. The same goes for calculations that are done on regular input arguments without uncertainty, these will only be done once for `Particles` whereas they will be done `N` times if you repeatedly call `f`. One could perhaps also make an argument for cache locality being favorable for the `Particles` type, but I'm not sure this holds for all examples. A benchmark example (more further down)
 ```julia
 using BenchmarkTools
 A = [Particles(1000) for i = 1:3, j = 1:3]
@@ -64,7 +64,7 @@ B = similar(A, Float64)
   3.916 ms (4000 allocations: 500.00 KiB)
 ```
 that's about a 30-fold reduction in time, and the repeated `qr` didn't even store or handle the statistics of the result.
-The type `StaticParticles` contains a statically sized, stack-allocated vector from StaticArrays.jl. This type is suitable if the number of particles is small, say < 500 ish.
+The type `StaticParticles` contains a statically sized, stack-allocated vector from StaticArrays.jl. This type is suitable if the number of particles is small, say < 500 ish (but expect long compilation times if > 100, especially on julia < v1.1).
 ```julia
 A = [StaticParticles(100) for i = 1:3, j = 1:3]
 B = similar(A, Float64)
@@ -89,7 +89,7 @@ The most basic constructor of `Particles` acts more or less like `randn(N)`, i.e
 One can also call (`Particles/StaticParticles`)
 - `Particles(v::Vector)` pre-sampled particles
 - `Particles(N = 500, d::Distribution = Normal(0,1))` samples `N` particles from the distribution `d`.
-- We don't export the ± operator so as to not mess with [Measurements.jl](https://github.com/JuliaPhysics/Measurements.jl), but you can import it by `import MonteCarloMeasurements.±`. We then have `μ ± σ = μ + σ*Particles(DEFAUL_NUM_PARTICLES)`, where the global constant `DEFAUL_NUM_PARTICLES = 500`. You can change this if you would like, or simply define your own `±` operator like `±(μ,σ) = μ + σ*Particles(my_default_number, my_default_distribution)`. The upside-down operator ∓ instead creates a `StaticParticles(100)`.
+- We don't export the ± operator (`\pm`) so as to not mess with [Measurements.jl](https://github.com/JuliaPhysics/Measurements.jl), but you can import it by `import MonteCarloMeasurements.±`. We then have `μ ± σ = μ + σ*Particles(DEFAUL_NUM_PARTICLES)`, where the global constant `DEFAUL_NUM_PARTICLES = 500`. You can change this if you would like, or simply define your own `±` operator like `±(μ,σ) = μ + σ*Particles(my_default_number, my_default_distribution)`. The upside-down operator ∓ (`\mp`) instead creates a `StaticParticles(100)`.
 
 **Common univariate distributions are sampled systematically**, meaning that a single random number is drawn and used to seed the sample. This will reduce the variance of the sample. If this is not desired, call `Particles(N, [d]; systematic=false)` The systematic sample can maintain its originally sorted order by calling `Particles(N, permute=false)`, but the default is to permute the sample so as to not have different `Particles` correlate strongly with each other.
 
@@ -100,14 +100,14 @@ One can also call (`Particles/StaticParticles`)
 ## Multivariate particles
 The constructors can be called with multivariate distributions, returning `v::Vector{Particle}` where particles are sampled from the desired multivariate distribution. Once `v` is propagated through a function `v2 = f(v)`, the results can be analyzed by asking for `mean(v2)` and `cov(v2)`, or by fitting a multivariate distribution, e.g., `MvNormal(v2)`.
 
-A `v::Vector{Particle}` can be converted into a `Matrix` by calling `Matrix(v)` and this will have a size of `N × dim`.
+A `v::Vector{Particle}` can be converted into a `Matrix` by calling `Matrix(v)` and this will have a size of `N × dim`. You can also index into `v` like it was already a matrix.
 
 Broadcasting the ±/∓ operators works as you would expect, `zeros(3) .± 1` gives you a three-vector of independent particles, so does `zeros(3) .+ Particles.(N)`.
 
-Independent multivariate systematic samples can be created using the function `outer_product` or the non-exported operator ⊗.
+Independent multivariate systematic samples can be created using the function `outer_product` or the non-exported operator ⊗ (`\otimes`).
 
 ## Plotting
-An instance of `p::Particle` can be plotted using `plot(p)`, that creates a histogram by default. If `StatsPlots.jl` is available, once can call `density(p)` to get a slightly different visualization. Vectors of particles can be plotted using one of
+An instance of `p::Particles` can be plotted using `plot(p)`, that creates a histogram by default. If [`StatsPlots.jl`](https://github.com/JuliaPlots/StatsPlots.jl) is available, one can call `density(p)` to get a slightly different visualization. Vectors of particles can be plotted using one of
 - `errorbarplot(x,y,[q=0.025])`: `q` determines the quantiles, set to `0` for max/min.
 - `mcplot(x,y)`: Plots all trajectories
 - `ribbonplot(x,y,[k=2])`: Plots with `k` standard deviations shaded area around mean.
@@ -127,22 +127,22 @@ dc = dcgain(G)[]
 # 500 Particles: 1.012 ± 0.149
 density(dc, title="Probability density of DC-gain")
 ```
-![window](figs/dens.svg)
+![window](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/figs/dens.svg)
 ```julia
 w = exp10.(LinRange(-1,1,200)) # Frequency vector
 mag, phase = bode(G,w) .|> vec
 
 errorbarplot(w,mag, yscale=:log10, xscale=:log10)
 ```
-![window](figs/errorbar.svg)
+![window](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/figs/errorbar.svg)
 ```julia
 mcplot(w,mag, yscale=:log10, xscale=:log10, alpha=0.2)
 ```
-![window](figs/mc.svg)
+![window](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/figs/mc.svg)
 ```julia
 ribbonplot(w,mag, yscale=:identity, xscale=:log10, alpha=0.2)
 ```
-![window](figs/rib.svg)
+![window](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/figs/rib.svg)
 
 ### Control systems benchmark
 ```julia
@@ -167,7 +167,7 @@ t2 = @belapsed bode($G,$w)
 ```
 
 ## Differential Equations
-[The tutorial](http://juliadiffeq.org/DiffEqTutorials.jl/html/type_handling/uncertainties.html) for solving differential equations using `Measurement` works for `Particles` as well. In the second pendulum example, I had to call `solve(..., dt=0.01, adaptive=false)`, otherwise the solver tried to estimate a suitable `dt` using the uncertain state, which created some problems.
+[The tutorial](http://juliadiffeq.org/DiffEqTutorials.jl/html/type_handling/uncertainties.html) for solving differential equations using `Measurement` works for `Particles` as well.
 
 
 ## Overloading a new function
@@ -193,3 +193,23 @@ These functions do not work with `Particles` out of the box. Special cases are c
 - `sqrt`
 
 The function `ℂ2ℂ_function(f::Function, p::AbstractArray{T})` applies `f : ℂ → ℂ ` to `z::Complex{<:AbstractParticles}`.
+
+## Weighted particles
+The type `WeightedParticles` contains an additional field `logweights`. You may modify this field as you see fit, e.g.
+```julia
+reweight(p,y) = (p.logweights .+= logpdf.(Normal(0,1), y .- p.particles))
+```
+where `y` would be some measurement. After this you can resample the particles using `resample!(p)`. This performs a systematic resample with replacement, where each particle is sampled proportionally to `exp.(logweights)`.
+
+## Monte-Carlo simulation by `map/pmap`
+Some functions will not work when the input arguments are of type `Particles`. For this kind of function, we provide a fallback onto a traditional `map(f,p.particles)`. The only thing you need to do is to decorate the function call with the macro `@bymap` like so:
+```julia
+f(x) = 3x^2
+p = 1 ± 0.1
+r = @bymap f(p)
+```
+We further provide the macro `@bypmap` which does exactly the same thing, but with a `pmap` (parallel map) instead, allowing you to run several invocations of `f` in a distributed fashion.
+
+These macros will map the function `f` over each element of `p::Particles{T,N}`, such that `f` is only called with arguments of type `T`, e.g., `Float64`. This handles arguments that are multivaiate particles `<: Vector{<:AbstractParticles}` as well.
+
+These macros will typically be slower than calling `f(p)`, but allow for Monte-Carlo simulation of things like calls to `Optim.optimize` etc., which fail if called like `optimize(f,p)`. If `f` is very expensive, `@bypmap` might prove prove faster than calling `f` with `p`, it's worth a try. The usual caveats for distributed computing applies, all code must be loaded on all workers etc.

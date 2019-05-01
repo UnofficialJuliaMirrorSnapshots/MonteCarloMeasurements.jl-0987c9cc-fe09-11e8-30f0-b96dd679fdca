@@ -1,14 +1,18 @@
-using MonteCarloMeasurements
+@info "Running tests"
+using MonteCarloMeasurements, Distributions
 using Test, LinearAlgebra, Statistics, Random
 import MonteCarloMeasurements: ±, ∓, ⊗, gradient, optimize
+@info "import Plots"
 import Plots
+@info "import Plots done"
 
 Random.seed!(0)
 
 @testset "MonteCarloMeasurements.jl" begin
 
     # σ/√N = σm
-    @testset "sampling" begin
+    @time @testset "sampling" begin
+        @info "Testing sampling"
         for _ = 1:10
             @test -3 < mean(systematic_sample(100))*sqrt(100) < 3
             @test -3 < mean(systematic_sample(10000))*sqrt(10000) < 3
@@ -21,19 +25,24 @@ Random.seed!(0)
         @test systematic_sample(10000, Beta(1,1)) |> Base.Fix1(fit, Beta) |> params |> x-> all(isapprox.(x,(1,1), atol=0.1))
 
     end
-    @testset "Particles" begin
-        for PT = (Particles, StaticParticles)
+    @time @testset "Particles" begin
+        @info "Creating the first StaticParticles"
+        @test 0 ∓ 1 isa StaticParticles
+        @test [0,0] ∓ 1 isa MonteCarloMeasurements.MvParticles
+        @test [0,0] ∓ [1,1] isa MonteCarloMeasurements.MvParticles
 
-            p = PT(1000)
+        @info "Done"
+        for PT = (Particles, StaticParticles, WeightedParticles)
+            @info "Running tests for $PT"
+            p = PT(100)
             @test 0 ± 1 ≈ p
             @test 0 ∓ 1 ≈ p
-            @test 0 ∓ 1 isa StaticParticles
             @test sum(p) ≈ 0
             @test cov(p) ≈ 1 atol=0.2
             @test std(p) ≈ 1 atol=0.2
             @test var(p) ≈ 1 atol=0.2
-            @test meanvar(p) ≈ 1/(length(p)) rtol=5e-3
-            @test meanstd(p) ≈ 1/sqrt(length(p)) rtol=5e-3
+            @test meanvar(p) ≈ 1/(length(p)) atol=5e-3
+            @test meanstd(p) ≈ 1/sqrt(length(p)) atol=5e-3
             @test p <= p
             @test p >= p
             @test !(p < p)
@@ -57,6 +66,8 @@ Random.seed!(0)
             @test p != 2p
             @test p ≈ 1.9std(p)
             @test !(p ≈ 2.1std(p))
+            @test !(p ≉ p)
+            @test !(mean(p) ≉ p)
             @test p ≉ 2.1std(p)
             @test !(p ≉ 1.9std(p))
 
@@ -69,16 +80,16 @@ Random.seed!(0)
             @test f(p) ≲ 15
             @test 5 ≲ f(p)
             @test Normal(f(p)).μ ≈ mean(f(p))
-            @test fit(Normal, f(p)).μ ≈ mean(f(p))
+            !isa(p, WeightedParticles) && @test fit(Normal, f(p)).μ ≈ mean(f(p))
 
             f = x -> x^2
-            p = PT(1000)
+            p = PT(100)
             @test 0.9 < mean(f(p)) < 1.1
             @test 0.9 < mean(f(p)) < 1.1
             @test f(p) ≈ 1
             @test !(f(p) ≲ 1)
-            @test f(p) ≲ 4
-            @test -2.2 ≲ f(p)
+            @test f(p) ≲ 5
+            @test -3 ≲ f(p)
             @test MvNormal([f(p),p]) isa MvNormal
 
             A = randn(3,3) .+ [PT(100) for i = 1:3, j = 1:3]
@@ -90,32 +101,41 @@ Random.seed!(0)
             @test all(A\b .≈ zeros(3))
             @test_nowarn qr(A)
             @test_nowarn Particles(100, MvNormal(2,1)) ./ Particles(100, Normal(2,1))
+            @info "Tests for $PT done"
+
+            p = PT{Float64,10}(2)
+            @test p isa PT{Float64,10}
+            @test all(p.particles .== 2)
         end
     end
 
 
 
-    @testset "Multivariate Particles" begin
-        for PT = (Particles, StaticParticles)
-
-            p = PT(1000, MvNormal(2,1))
+    @time @testset "Multivariate Particles" begin
+        for PT = (Particles, StaticParticles, WeightedParticles)
+            @info "Running tests for multivariate $PT"
+            p = PT(100, MvNormal(2,1))
             @test_nowarn sum(p)
-            @test cov(p) ≈ I atol=0.2
+            @test cov(p) ≈ I atol=0.6
             @test mean(p) ≈ [0,0] atol=0.2
-            @test size(Matrix(p)) == (1000,2)
+            m = Matrix(p)
+            @test size(m) == (100,2)
+            @test m[1,2] == p[1,2]
 
             p = PT(100, MvNormal(2,2))
             @test cov(p) ≈ 4I atol=2
             @test mean(p) ≈ [0,0] atol=1
             @test size(Matrix(p)) == (100,2)
 
-            p = PT(1000, MvNormal(2,2))
+            p = PT(100, MvNormal(2,2))
             @test fit(MvNormal, p).μ ≈ mean(p)
             @test MvNormal(p).μ ≈ mean(p)
             @test cov(MvNormal(p)) ≈ cov(p)
+            @info "Tests for multivariate $PT done"
         end
     end
-    @testset "gradient" begin
+    @time @testset "gradient" begin
+        @info "Testing gradient"
         e = 0.001
         p = 3 ± e
         f = x -> x^2
@@ -140,7 +160,8 @@ Random.seed!(0)
         @test MonteCarloMeasurements.gradient(f,xp) ≈ g atol = 0.1
         @test MonteCarloMeasurements.jacobian(j,xp) ≈ H
     end
-    @testset "leastsquares" begin
+    @time @testset "leastsquares" begin
+        @info "Testing leastsquares"
         n, m = 10000, 3
         A = randn(n,m)
         x = randn(m)
@@ -157,7 +178,8 @@ Random.seed!(0)
         @test norm(cov(xhp) .- C1) < 1e-7
     end
 
-    @testset "misc" begin
+    @time @testset "misc" begin
+        @info "Testing misc"
         p = 0 ± 1
         @test p[1] == p.particles[1]
         @test_nowarn display(p)
@@ -168,8 +190,8 @@ Random.seed!(0)
         @test length(Particles(100, MvNormal(2,1))) == 2
         @test length(p) == 500
         @test ndims(p) == 0
-        @test eltype(typeof(p)) == Float64
-        @test eltype(p) == Float64
+        @test eltype(typeof(p)) == typeof(p)
+        @test eltype(p) == typeof(p)
         @test convert(Int, 0p) == 0
         @test promote_type(Particles{Float64,10}, Float64) == Particles{Float64,10}
         @test promote_type(Particles{Float64,10}, Int64) == Particles{Float64,10}
@@ -206,7 +228,8 @@ Random.seed!(0)
         @test length(union(p, 1+p)) == 2length(p)
     end
 
-    @testset "mutation" begin
+    @time @testset "mutation" begin
+        @info "Testing mutation"
         function adder!(x)
             for i = eachindex(x)
                 x[i] += 1
@@ -218,7 +241,8 @@ Random.seed!(0)
         @test all(x .≈ (2:6) .± 1)
     end
 
-    @testset "outer_product" begin
+    @time @testset "outer_product" begin
+        @info "Testing outer product"
         d = 2
         μ = zeros(d)
         σ = ones(d)
@@ -236,13 +260,15 @@ Random.seed!(0)
         @test cov(p) ≈ I atol=1e-1
     end
 
-    @testset "plotting" begin
+    @time @testset "plotting" begin
+        @info "Testing plotting"
         p = 0 ± 1
         v = [p,p]
         @test_nowarn Plots.plot(p)
         @test_nowarn Plots.plot(v)
         @test_nowarn Plots.plot(x->x^2,v)
         @test_nowarn Plots.plot(v,v)
+        @test_nowarn Plots.plot(v,v; points=true)
         @test_nowarn Plots.plot(v,ones(2))
         @test_nowarn Plots.plot(1:2,v)
 
@@ -253,7 +279,8 @@ Random.seed!(0)
         @test_nowarn MonteCarloMeasurements.print_functions_to_extend()
     end
 
-    @testset "optimize" begin
+    @time @testset "optimize" begin
+        @info "Testing optimization"
         function rosenbrock2d(x)
             return (1.0 - x[1])^2 + 100.0 * (x[2] - x[1]^2)^2
         end
@@ -263,6 +290,77 @@ Random.seed!(0)
             all(popt .≈ [1,1])
         end
     end
+
+    @time @testset "WeightedParticles" begin
+        @info "Testing weighted particles"
+        p = WeightedParticles(100)
+        # @test sum(p.weights) ≈ 1
+        @test sum(exp,p.logweights) ≈ 1
+        p.logweights .= randn.()
+        resample!(p)
+        # @test sum(p.weights) ≈ 1
+        @test sum(exp,p.logweights) ≈ 1
+        p = WeightedParticles(100)
+        p.logweights .+= logpdf.(Normal(0,1), 2 .-p.particles)
+        resample!(p)
+        @test mean(p) > 0
+        v = [WeightedParticles(1000), WeightedParticles(1000)]
+        @test cov(v) ≈ I atol=0.15
+        p = WeightedParticles(100)
+        p.logweights .= randn.()
+        log∑exp = log(sum(exp, p.logweights))
+        @test log∑exp ≈ MonteCarloMeasurements.logsumexp!(p)[1]
+        # Test numerical stability
+        p = WeightedParticles(2)
+        p.logweights .= [1e-20, log(1e-20)]
+        @test MonteCarloMeasurements.logsumexp!(p)[1] ≈ 2e-20
+    end
+
+
+    @time @testset "bymap" begin
+        @info "Testing bymap"
+
+        @test MonteCarloMeasurements.Ngetter(Particles(50)) == 50
+        @test_throws ArgumentError MonteCarloMeasurements.Ngetter(Particles(30), Particles(10))
+        p = 0 ± 1
+
+        @test MonteCarloMeasurements.Ngetter([p,p],p) == 500
+        @test MonteCarloMeasurements.Ngetter([p,p]) == 500
+
+        f(x) = 2x
+        f(x,y) = 2x + y
+
+        @test f(p) ≈ @bymap f(p)
+        @test f(p,p) ≈ @bymap f(p,p)
+        @test f(p,10) ≈ @bymap f(p,10)
+        @test !(f(p,10) ≈ @bymap f(p,-10))
+
+        @test f(p) ≈ @bypmap f(p)
+        @test f(p,p) ≈ @bypmap f(p,p)
+        @test f(p,10) ≈ @bypmap f(p,10)
+        @test !(f(p,10) ≈ @bypmap f(p,-10))
+
+        g(x,y) = sum(x) + sum(y)
+        @test g([p,p], [p,p]) ≈ @bymap g([p,p], [p,p])
+        @test g([p,p], p) ≈ @bymap g([p,p], p)
+        @test_broken g([p p], [p,p]) ≈ @bymap g([p p], [p,p])
+
+        @test g([p,p], [p,p]) ≈ @bypmap g([p,p], [p,p])
+        @test g([p,p], p) ≈ @bypmap g([p,p], p)
+        @test_broken g([p p], [p,p]) ≈ @bypmap g([p p], [p,p])
+
+        h(x,y) = x .* y'
+        Base.Cartesian.@nextract 4 p d-> 0±1
+        @test_broken h([p_1,p_2], [p_3,p_4]) ≈ @bymap  h([p_1,p_2], [p_3,p_4])
+        @test_broken h([p_1,p_2], [p_3,p_4]) ≈ @bypmap h([p_1,p_2], [p_3,p_4])
+
+        h2(x,y) = x .* y
+        Base.Cartesian.@nextract 4 p d-> 0±1
+        @test h2([p_1,p_2], [p_3,p_4]) ≈ @bymap  h2([p_1,p_2], [p_3,p_4])
+        @test h2([p_1,p_2], [p_3,p_4]) ≈ @bypmap h2([p_1,p_2], [p_3,p_4])
+
+    end
+
 end
 
 
