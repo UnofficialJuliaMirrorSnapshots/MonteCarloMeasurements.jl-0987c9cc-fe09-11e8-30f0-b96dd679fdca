@@ -82,6 +82,7 @@ Random.seed!(0)
             @test Normal(f(p)).μ ≈ mean(f(p))
             !isa(p, WeightedParticles) && @test fit(Normal, f(p)).μ ≈ mean(f(p))
 
+
             f = x -> x^2
             p = PT(100)
             @test 0.9 < mean(f(p)) < 1.1
@@ -101,11 +102,24 @@ Random.seed!(0)
             @test all(A\b .≈ zeros(3))
             @test_nowarn qr(A)
             @test_nowarn Particles(100, MvNormal(2,1)) ./ Particles(100, Normal(2,1))
+            pn = Particles(100, Normal(2,1), systematic=false)
+            @test pn ≈ 2
+            @test !issorted(pn.particles)
+            @test !issorted(p.particles)
+
+            pn = Particles(100, Normal(2,1), systematic=true, permute=false)
+            @test pn ≈ 2
+            @test issorted(pn.particles)
+
             @info "Tests for $PT done"
 
             p = PT{Float64,10}(2)
             @test p isa PT{Float64,10}
             @test all(p.particles .== 2)
+
+            @test Particles(100) + Particles(randn(Float32, 100)) ≈ 0
+            @test_throws MethodError p + Particles(randn(Float32, 200)) # Npart and Float type differ
+            @test_throws MethodError p + Particles(200) # Npart differ
         end
     end
 
@@ -120,7 +134,7 @@ Random.seed!(0)
             @test mean(p) ≈ [0,0] atol=0.2
             m = Matrix(p)
             @test size(m) == (100,2)
-            @test m[1,2] == p[1,2]
+            # @test m[1,2] == p[1,2]
 
             p = PT(100, MvNormal(2,2))
             @test cov(p) ≈ 4I atol=2
@@ -134,6 +148,24 @@ Random.seed!(0)
             @info "Tests for multivariate $PT done"
         end
     end
+
+    @testset "sigmapoints" begin
+        @info "Testing sigmapoints"
+        m = 1
+        Σ = 3
+        s = sigmapoints(m,Σ)
+        @test var(s) ≈ Σ
+        @test mean(s) == m
+        @test sigmapoints(Normal(m,√(Σ))) == s
+
+        m = [1,2]
+        Σ = [3. 1; 1 4]
+        s = sigmapoints(m,Σ)
+        @test cov(s) ≈ Σ
+        @test mean(s, dims=1)' ≈ m
+        @test sigmapoints(MvNormal(m,Σ)) == s
+    end
+
     @time @testset "gradient" begin
         @info "Testing gradient"
         e = 0.001
@@ -196,11 +228,11 @@ Random.seed!(0)
         @test promote_type(Particles{Float64,10}, Float64) == Particles{Float64,10}
         @test promote_type(Particles{Float64,10}, Int64) == Particles{Float64,10}
         @test promote_type(Particles{Float64,10}, ComplexF64) == Complex{Particles{Float64,10}}
-        @test promote_type(Particles{Float64,10}, ComplexF64) == Complex{Particles{Float64,10}}
         @test convert(Float64, 0p) isa Float64
         @test convert(Float64, 0p) == 0
         @test convert(Int, 0p) isa Int
         @test convert(Int, 0p) == 0
+        @test convert(Particles{Float64,100}, Particles(randn(Float32, 100))) isa Particles{Float64,100}
         @test_throws ArgumentError convert(Int, p)
         @test_throws ArgumentError AbstractFloat(p)
         @test AbstractFloat(0p) == 0.0

@@ -80,12 +80,12 @@ function print_functions_to_extend()
 end
 function Base.show(io::IO, p::AbstractParticles{T,N}) where {T,N}
     sPT = string(typeof(p).name)
-    if ndims(T) < 1
-        print(io, "(", N, " $sPT: ", round(mean(p), digits=3), " ± ", round(std(p), digits=3),")")
-    else
-        print(io, "(", N, " $sPT with mean ", round.(mean(p), digits=3), " and std ", round.(sqrt.(diag(cov(p))), digits=3),")")
-    end
+    print(io, "(", N, " $sPT: ", round(mean(p), sigdigits=3), " ± ", round(std(p), sigdigits=3),")")
 end
+# function Base.show(io::IO, p::MvParticles)
+#     sPT = string(typeof(p).name)
+#     print(io, "(", N, " $sPT with mean ", round.(mean(p), sigdigits=3), " and std ", round.(sqrt.(diag(cov(p))), sigdigits=3),")")
+# end
 for mime in (MIME"text/x-tex", MIME"text/x-latex")
     @eval function Base.show(io::IO, ::$mime, p::AbstractParticles)
         print(io, "\$")
@@ -223,11 +223,11 @@ for PT in (:Particles, :StaticParticles, :WeightedParticles)
     @eval begin
         Base.length(::Type{$PT{T,N}}) where {T,N} = N
         Base.eltype(::Type{$PT{T,N}}) where {T,N} = $PT{T,N}
-        Base.promote_rule(::Type{S}, ::Type{$PT{T,N}}) where {S,T,N} = $PT{promote_type(S,T),N}
+        Base.promote_rule(::Type{S}, ::Type{$PT{T,N}}) where {S,T,N} = $PT{promote_type(S,T),N} # This is hard to hit due to method for real 3 lines down
         Base.promote_rule(::Type{Complex}, ::Type{$PT{T,N}}) where {T,N} = Complex{$PT{T,N}}
         Base.promote_rule(::Type{Complex{T}}, ::Type{$PT{T,N}}) where {T<:Real,N} = Complex{$PT{T,N}}
         Base.convert(::Type{$PT{T,N}}, f::Real) where {T,N} = $PT{T,N}(fill(T(f),N))
-        Base.convert(::Type{$PT{T,N}}, f::$PT{S,N}) where {T,N,S} = $PT{promote_type(T,S),N}($PT{promote_type(T,S),N}(f))
+        Base.convert(::Type{$PT{T,N}}, f::$PT{S,N}) where {T,N,S} = $PT{promote_type(T,S),N}(promote_type(T,S).(f.particles))
         function Base.convert(::Type{S}, p::$PT{T,N}) where {S<:ConcreteFloat,T,N}
             std(p) < 100eps(S) || throw(ArgumentError("Cannot convert a particle distribution to a float if not all particles are the same."))
             return S(p[1])
@@ -283,7 +283,7 @@ Base.:\(H::MvParticles,p::AbstractParticles) = Matrix(H)\p.particles
 
 Base.Broadcast.broadcastable(p::AbstractParticles) = Ref(p)
 Base.getindex(p::AbstractParticles, i::Integer) = getindex(p.particles, i)
-Base.getindex(v::MvParticles, i::Int, j::Int) = v[j][i]
+# Base.getindex(v::MvParticles, i::Int, j::Int) = v[j][i] # Defining this methods screws with show(::MvParticles)
 
 Base.Matrix(v::MvParticles) = reduce(hcat, getfield.(v,:particles))
 # function Statistics.var(v::MvParticles,args...;kwargs...) # Not sure if it's a good idea to define this. Is needed for when var(v::AbstractArray) is used
