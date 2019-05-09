@@ -1,7 +1,7 @@
-# MonteCarloMeasurements
-
+![logo](figs/logo.svg)
 [![Build Status](https://travis-ci.org/baggepinnen/MonteCarloMeasurements.jl.svg?branch=master)](https://travis-ci.org/baggepinnen/MonteCarloMeasurements.jl)
 [![codecov](https://codecov.io/gh/baggepinnen/MonteCarloMeasurements.jl/branch/master/graph/badge.svg)](https://codecov.io/gh/baggepinnen/MonteCarloMeasurements.jl)
+
 
 This package facilitates nonlinear [uncertainty propagation](https://en.wikipedia.org/wiki/Propagation_of_uncertainty) by means of Monte-Carlo methods. A variable or parameter might be associated with uncertainty if it is measured or otherwise estimated from data. We provide three core types to represent uncertainty: `Particles`, `StaticParticles` and `WeightedParticles`, all `<: Real`. (The name "Particles" comes from the [particle-filtering](https://en.wikipedia.org/wiki/Particle_filter) literature.) These types all form a Monte-Carlo approximation of the distribution of a floating point number, i.e., the distribution is represented by samples/particles. Correlated quantities are handled as well, see [multivariate particles](https://github.com/baggepinnen/MonteCarloMeasurements.jl#multivariate-particles) below.
 
@@ -15,9 +15,9 @@ Below, we show an example where an input uncertainty is propagated through `σ(x
 
 In the figure above, we see the probability-density function of the input `p(x)` depicted on the x-axis. The density of the output `p(y) = f(x)` is shown on the y-axis. Linear uncertainty propagation does this by linearizing `f(x)` and using the equations for an affine transformation of a Gaussian distribution, and hence produces a Gaussian approximation to the output density. The particles form a sampled approximation of the input density `p(x)`. After propagating them through `f(x)`, they form a sampled approximation to `p(y)` which correspond very well to the true output density, even though only 20 particles were used in this example. The figure can be reproduced by `examples/transformed_densities.jl`.
 
-For a comparison of uncertainty propagation and nonlinear filtering, see [notes](https://github.com/baggepinnen/MonteCarloMeasurements.jl#notes) below.
+For a comparison of uncertainty propagation and nonlinear filtering, see [notes](https://github.com/baggepinnen/MonteCarloMeasurements.jl#comparison-to-nonlinear-filtering) below.
 
-## Basic Examples
+# Basic Examples
 ```julia
 using MonteCarloMeasurements, Distributions
 using MonteCarloMeasurements: ±
@@ -64,7 +64,7 @@ julia> Particles(1000, MvNormal([0,0],[2. 1; 1 4])) # A multivariate distributio
  (1000 Particles: 0.0819 ± 2.0)
 ```
 
-## Why a package
+# Why a package
 Convenience. Also, the benefit of using this number type instead of manually calling a function `f` with perturbed inputs is that, at least in theory, each intermediate operation on `Particles` can exploit SIMD, since it's performed over a vector. If the function `f` is called several times, however, the compiler might not be smart enough to SIMD the entire thing. Further, any dynamic dispatch is only paid for once, whereas it would be paid for `N` times if doing things manually. The same goes for calculations that are done on regular input arguments without uncertainty, these will only be done once for `Particles` whereas they will be done `N` times if you repeatedly call `f`. One could perhaps also make an argument for cache locality being favorable for the `Particles` type, but I'm not sure this holds for all examples. Below, we show a small benchmark example (additional benchmarks further down) where we calculate a QR factorization of a matrix using `Particles` and compare it to manually doing it many times
 ```julia
 using BenchmarkTools
@@ -96,7 +96,7 @@ B = similar(A, Float64)
 ```
 `StaticParticles` allocate much less memory than regular `Particles`, but are more stressful for the compiler to handle.
 
-## Constructors
+# Constructors
 The most basic constructor of `Particles` acts more or less like `randn(N)`, i.e., it creates a particle cloud with distribution `Normal(0,1)`. To create a particle cloud with distribution `Normal(μ,σ)`, you can call `μ + σ*Particles(N)`, or `Particles(N, Normal(μ,σ))`. This last constructor works with any distribution from which one can sample.
 One can also call (`Particles/StaticParticles`)
 - `Particles(v::Vector)` pre-sampled particles
@@ -109,7 +109,7 @@ Construction of `Particles` as [sigma points](https://en.wikipedia.org/wiki/Unsc
 
 
 
-## Multivariate particles
+# Multivariate particles
 The constructors can be called with multivariate distributions, returning `v::Vector{Particle}` where particles are sampled from the desired multivariate distribution. Once `v` is propagated through a function `v2 = f(v)`, the results can be analyzed by, e.g., asking for `mean(v2)` and `cov(v2)`, or by fitting a multivariate distribution, e.g., `MvNormal(v2)`.
 
 A `v::Vector{Particle}` can be converted into a `Matrix` by calling `Matrix(v)` and this will have a size of `N × dim`. ~~You can also index into `v` like it was already a matrix.~~([This was a bad idea](https://discourse.julialang.org/t/show-for-vector-type-that-defines-matrix-getindex/23732/2?u=baggepinnen))
@@ -118,7 +118,7 @@ Broadcasting the ±/∓ operators works as you would expect, `zeros(3) .± 1` gi
 
 Independent multivariate systematic samples can be created using the function `outer_product` or the non-exported operator ⊗ (`\otimes`).
 
-#### Examples
+### Examples
 The following example creates a vector of two `Particles`. Since they were created independently of each other, they are independent and uncorrelated and have the covariance matrix `Σ = Diagonal([1², 2²])`. The linear transform with the matrix `A` should in theory change this covariance matrix to `AΣAᵀ`, which we can verify be asking for the covariance matrix of the output particles.
 ```julia
 julia> p = [1 ± 1, 5 ± 2]
@@ -164,7 +164,7 @@ julia> cov(log.(p))
  1.00218
 ```
 
-## Sigma points
+# Sigma points
 The [unscented transform](https://en.wikipedia.org/wiki/Unscented_transform#Sigma_points) uses a small number of points called *sigma points* to propagate the first and second moments of a probability density. We provide a function `sigmapoints(μ, Σ)` that creates a `Matrix` of `2n+1` sigma points, where `n` is the dimension. This can be used to initialize any kind of `AbstractParticles`, e.g.:
 ```julia
 julia> m = [1,2]
@@ -184,20 +184,18 @@ true
 ```
 `sigmapoints` also accepts a `Normal/MvNormal` object as input.
 
-## Latin hypercube sampling
+# Latin hypercube sampling
 We do not provide functionality for [latin hypercube sampling](https://en.wikipedia.org/wiki/Latin_hypercube_sampling), rather, we show how to use the package [LatinHypercubeSampling.jl](https://github.com/MrUrq/LatinHypercubeSampling.jl) to initialize particles.
 ```julia
 # import Pkg; Pkg.add("LatinHypercubeSampling")
 using MonteCarloMeasurements, LatinHypercubeSampling
 ndims  = 2
-N      = 120  # Number of particles
+N      = 100  # Number of particles
 ngen   = 1000 # How long to run optimization
-X, fit = LHCoptim(N,ndims,ngenerations)
-X      = X .- mean(X,dims=1) # Normalize the sample
-X    ./= std(X,dims=1)
+X, fit = LHCoptim(N,ndims,ngen)
 m, Σ   = [1,2], [2 1; 1 4] # Desired mean and covariance
-particles = Matrix((m .+ cholesky(Σ).L * X')') # Transform sample
-p         = Particles(particles)
+particle_matrix = transform_moments(X,m,Σ)
+p      = Particles(particle_matrix) # These are our LHS particles with correct moments
 plot(scatter(eachcol(particles)..., title="Sample"), plot(fit, title="Fitness vs. iteration"))
 
 julia> mean(p)
@@ -207,17 +205,21 @@ julia> mean(p)
 
 julia> cov(p)
 2×2 Array{Float64,2}:
- 2.0       0.937557
- 0.937557  2.93756
+ 2.0  1.0
+ 1.0  4.0
 ```
-Latin hypercube sampling creates an approximately uniform sample in `ndims` dimensions. The applied transformation gives the particles the desired mean and covariance. The statistics of the sample can be visualized:
+Latin hypercube sampling creates an approximately uniform sample in `ndims` dimensions. The applied transformation gives the particles the desired mean and covariance.
+*Caveat:* Unfortunately, endowing the sampled latin hypercube with a desired *non-diagonal* covariance matrix destroys the latin properties for all dimensions but the first. This does not happen for diagonal covariance matrices.
+
+ The statistics of the sample can be visualized:
 ```julia
 using StatsPlots
 corrplot(particles)
 plot(density(p[1]), density(p[2]))
 ```
+see also `examples/lhs.jl`.
 
-## Plotting
+# Plotting
 An instance of `p::Particles` can be plotted using `plot(p)`, that creates a histogram by default. If [`StatsPlots.jl`](https://github.com/JuliaPlots/StatsPlots.jl) is available, one can call `density(p)` to get a slightly different visualization. Vectors of particles can be plotted using one of
 - `errorbarplot(x,y,[q=0.025])`: `q` determines the quantiles, set to `0` for max/min.
 - `mcplot(x,y)`: Plots all trajectories
@@ -255,64 +257,47 @@ ribbonplot(w,mag, yscale=:identity, xscale=:log10, alpha=0.2)
 ```
 ![A bodeplot with a ribbon](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/figs/rib.svg)
 
-### Control systems benchmark
-```julia
-using MonteCarloMeasurements, ControlSystems, BenchmarkTools, Printf
-w  = exp10.(LinRange(-1,1,200)) # Frequency vector
-p  = 1 ± 0.1
-ζ  = 0.3 ± 0.1
-ω  = 1 ± 0.1
-G  = tf([p*ω], [1, 2ζ*ω, ω^2])
-t1 = @belapsed bode($G,$w)
-p  = 1
-ζ  = 0.3
-ω  = 1
-G  = tf([p*ω], [1, 2ζ*ω, ω^2])
-t2 = @belapsed bode($G,$w)
 
-@printf("Time with 500 particles: %16.4fms \nTime with regular floating point: %7.4fms\n500×floating point time: %16.4fms\nSpeedup factor: %22.1fx\n", 1000*t1, 1000*t2, 1000*500t2, 500t2/t1)
-  # Time with 500 particles:          14.9095ms
-  # Time with regular floating point:  0.5517ms
-  # 500×floating point time:         275.8640ms
-  # Speedup factor:                   18.5x
-```
-
-## Differential Equations
+# Differential Equations
 [The tutorial](http://juliadiffeq.org/DiffEqTutorials.jl/html/type_handling/uncertainties.html) for solving differential equations using `Measurement` works for `Particles` as well.
 
-
-## Overloading a new function
-If a method for `Particles` is not implemented for your function `yourfunc` in module `Mod`, the pattern looks like this
+# Limitations
+One major limitation is functions that contains control flow, where the branch is decided by an uncertain value. Consider the following case
 ```julia
-f = nameof(yourfunc)
-for ParticlesType in (:Particles, :StaticParticles)
-  @eval function (Mod.$f)(p::$ParticlesType)
-      $ParticlesType(map($f, p.particles))
-  end
+function negsquare(x)
+    x > 0 ? x^2 : -x^2
 end
+p = 0 ± 1
 ```
-This defines the one-argument method for both `Particles` and `StaticParticles`. For two-argument methods, see [the source](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/src/particles.jl#L80). If the function is from base or stdlib, you can just add it to the appropriate list in the source and submit a PR :)
+Ideally, half of the particles should turn out negative and half positive when applying `negsquare(p)`. However, this will not happen as the `x > 0` will use the mean of the particles to decide the branch and execute this branch for all particles. To circumvent this, define `negsquare` as a primitive using `register_primitive` described below. Common such functions from `Base`, such as `max/min` etc. are already registered.
 
-### ℝⁿ → ℝⁿ functions
+# Overloading a new function
+If a method for `Particles` is not implemented for your function `yourfunc`, the pattern looks like this
+```julia
+register_primitive(yourfunc)
+```
+This defines both a one-argument method and a multi-arg methodfor both `Particles` and `StaticParticles`. If you only want to define one of these, see `register_primitive_single`/`register_primitive_multi`. If the function is from base or stdlib, you can just add it to the appropriate list in the source and submit a PR :)
+
+## ℝⁿ → ℝⁿ functions
 These functions do not work with `Particles` out of the box. Special cases are currently implemented for
 - `exp : ℝ(n×n) → ℝ(n×n)`   exponential matrix
 
 The function `ℝⁿ2ℝⁿ_function(f::Function, p::AbstractArray{T})` applies `f : ℝⁿ → ℝⁿ` to an array of particles.
 
-### ℂ → ℂ functions
+## ℂ → ℂ functions
 These functions do not work with `Particles` out of the box. Special cases are currently implemented for
 - `sqrt`
 
 The function `ℂ2ℂ_function(f::Function, p::AbstractArray{T})` applies `f : ℂ → ℂ ` to `z::Complex{<:AbstractParticles}`.
 
-## Weighted particles
+# Weighted particles
 The type `WeightedParticles` contains an additional field `logweights`. You may modify this field as you see fit, e.g.
 ```julia
 reweight(p,y) = (p.logweights .+= logpdf.(Normal(0,1), y .- p.particles))
 ```
 where `y` would be some measurement. After this you can resample the particles using `resample!(p)`. This performs a systematic resample with replacement, where each particle is sampled proportionally to `exp.(logweights)`.
 
-## Monte-Carlo simulation by `map/pmap`
+# Monte-Carlo simulation by `map/pmap`
 Some functions will not work when the input arguments are of type `Particles`. For this kind of function, we provide a fallback onto a traditional `map(f,p.particles)`. The only thing you need to do is to decorate the function call with the macro `@bymap` like so:
 ```julia
 f(x) = 3x^2
@@ -326,11 +311,71 @@ These macros will map the function `f` over each element of `p::Particles{T,N}`,
 These macros will typically be slower than calling `f(p)`, but allow for Monte-Carlo simulation of things like calls to `Optim.optimize` etc., which fail if called like `optimize(f,p)`. If `f` is very expensive, `@bypmap` might prove prove faster than calling `f` with `p`, it's worth a try. The usual caveats for distributed computing applies, all code must be loaded on all workers etc.
 
 
-## Notes
+# When to use what?
+
+| Situation       | Action       |
+|-----------------|--------------|
+| Linear functions | Use linear uncertainty propagation, i.e., Measurements.jl |
+| Highly nonlinear/discountinuous functions | Use MonteCarloMeasurements |
+| Large uncertainties in input | Use MonteCarloMeasurements |
+| Small uncertainties in input in relation to the curvature of the function | Use Measurements |
+| Interested in low probability events / extremas  | Use MonteCarloMeasurements |
+| Limited computational budget | Use Measurements or `StaticParticles` with  [`sigmapoints`](https://github.com/baggepinnen/MonteCarloMeasurements.jl#sigma-points). See benchmark below. |
+| Non-Gaussian input distribution  | Use MonteCarloMeasurements |
+
+Due to [Jensen's inequality](https://en.wikipedia.org/wiki/Jensen%27s_inequality), linear uncertainty propagation will always underestimate the mean of nonlinear convex functions and overestimate the mean of concave functions. From wikipedia
+> In its simplest form the inequality states that the convex transformation of a mean is less than or equal to the mean applied after convex transformation; it is a simple corollary that the opposite is true of concave transformations.
+
+Linear uncertainty propagation does thus not allow you to upperbound/lowerbound the output uncertainty of a convex/concave function, and will be conservative in the reverse case.
+
+The benchmark results below come from [`examples/controlsystems.jl`](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/examples/controlsystems.jl) The benchmark consists of calculating the Bode curves for a linear system with uncertain parameters
+```julia
+w  = exp10.(LinRange(-1,1,200)) # Frequency vector
+p  = 1 ± 0.1
+ζ  = 0.3 ± 0.1
+ω  = 1 ± 0.1
+G  = tf([p*ω], [1, 2ζ*ω, ω^2])
+t1 = @belapsed bode($G,$w)
+   ⋮
+```
+
+| Benchmark | Results |
+| ------------------------|-----------|
+| Time with 500 particles | 11.5937ms |
+| Time with regular floating point | 0.3456ms |
+| Time with Measurements | 0.5794ms |
+| Time with 100 static particles | 1.8212ms |
+| Time with static sigmapoints | 0.7252ms |
+| 500×floating point time | 172.7780ms |
+| Speedup particles vs. Manual | 14.9x |
+| Slowdown particles vs. Measurements | 20.0x |
+| Slowdown static vs. Measurements | 3.1x |
+| Slowdown sigma vs. Measurements | 1.3x |
+
+## Comparison to nonlinear filtering
 The table below compares methods for uncertainty propagation with their parallel in nonlinear filtering.
 
-| Uncertainty propagation  | Dynamic filtering       | Method              |
-| -------------------------|-------------------------|---------------------|
-| Measurements.jl          | Extended Kalman filter  | Linearization       |
-| `Particles(sigmapoints)` | Unscented Kalman Filter | Unscented transform |
-| `Particles`              | Particle Filter         | Monte Carlo         |
+| Uncertainty propagation  | Dynamic filtering       | Method                 |
+| -------------------------|-------------------------|------------------------|
+| Measurements.jl          | Extended Kalman filter  | Linearization          |
+| `Particles(sigmapoints)` | Unscented Kalman Filter | Unscented transform    |
+| `Particles`              | Particle Filter         | Monte Carlo (sampling) |
+
+
+# Examples
+## [Control systems](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/examples/controlsystems.jl)
+This example shows how to simulate control systems (using [ControlSystems.jl](https://github.com/JuliaControl/ControlSystems.jl)
+[](ControlSystems.jl)) with uncertain parameters. We calculate and display Bode diagrams, Nyquist diagrams and time-domain responses. We also illustrate how the package [ControlSystemIdentification.jl](https://github.com/baggepinnen/ControlSystemIdentification.jl) interacts with MonteCarloMeasurements to facilitate the creation and analysis of uncertain systems.
+
+We also perform some limited benchmarks.
+
+## [Lantin Hypercube Sampling](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/examples/lhs.jl)
+We show how to initialize particles with LHS and how to make sure the sample gets the desired moments. We also visualize the statistics of the sample.
+
+## [How MC uncertainty propagation works](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/examples/transformed_densities.jl)
+We produce the first figure in this readme and explain in visual detail how different forms of uncertainty propagation propagates a probability distribution through a nonlinear function.
+
+## [Robust probabilistic optimization](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/examples/robust_controller_opt.jl)
+ere, we use MonteCarloMeasurements to perform robust optimization. With robust and probabilistic, we mean that we place some kind of bound on a quantile of an uncertain value, or otherwise make use of the probability distribution of some value that depend on the optimized parameters.
+
+The application we consider is optimization of a PID controller. Normally, we are interested in controller performance and robustness against uncertainty. The robustness is often introduced by placing an upper bound on the, so called, sensitivity function. When the system to be controlled is parameterized by `Particles`, we can penalize both variance in the performance measure as well as the 90:th quantile of the maximum of the sensitivity function. This example illustrates how easy it is to incorporate probabilistic constrains or cost functions in an optimization problem using `Particles`.

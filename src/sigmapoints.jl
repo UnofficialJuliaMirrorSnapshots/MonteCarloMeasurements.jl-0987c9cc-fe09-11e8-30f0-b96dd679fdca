@@ -20,6 +20,7 @@ true
 julia> mean(p) ≈ m
 true
 ```
+Make sure to pass the variance (not std) as second argument in case `μ` and `Σ` are scalars.
 """
 function sigmapoints(m, Σ)
     n = length(m)
@@ -29,3 +30,22 @@ end
 
 sigmapoints(d::Normal) = sigmapoints(mean(d), var(d))
 sigmapoints(d::MvNormal) = sigmapoints(mean(d), Matrix(cov(d)))
+
+
+"""
+    Y = transform_moments(X::Matrix, m, Σ)
+Transforms `X` such that it get the specified mean and covariance.
+
+```julia
+m, Σ   = [1,2], [2 1; 1 4] # Desired mean and covariance
+particles = transform_moments(X, m, Σ)
+julia> cov(particles) ≈ Σ
+true
+```
+**Note**, if `X` is a latin hypercube and `Σ` is non-diagonal, then the latin property is destroyed for all dimensions but the first.
+"""
+function transform_moments(X,m,Σ)
+    X  = X .- mean(X,dims=1) # Normalize the sample
+    xl = cholesky(cov(X)).L
+    Matrix((m .+ (cholesky(Σ).L/xl)*X')')
+end
