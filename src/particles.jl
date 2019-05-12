@@ -47,25 +47,39 @@ function print_functions_to_extend()
         end
     end
 end
+shortform(p::Particles) = "Part"
+shortform(p::StaticParticles) = "SPart"
+shortform(p::WeightedParticles) = "WPart"
+function to_num_str(p)
+    s = std(p)
+    if s < eps(p)
+        string(round(mean(p), sigdigits=3))
+    else
+        string(round(mean(p), sigdigits=3), " ± ", round(s, sigdigits=2))
+    end
+end
+function Base.show(io::IO, ::MIME"text/plain", p::AbstractParticles{T,N}) where {T,N}
+    sPT = shortform(p)
+    print(io, "$(sPT)$N(", to_num_str(p),")")
+end
+
 function Base.show(io::IO, p::AbstractParticles{T,N}) where {T,N}
-    sPT = string(typeof(p).name)
-    print(io, "(", N, " $sPT: ", round(mean(p), sigdigits=3), " ± ", round(std(p), sigdigits=3),")")
+    print(io, to_num_str(p))
 end
 # function Base.show(io::IO, p::MvParticles)
-#     sPT = string(typeof(p).name)
+#     sPT = shortform(p)
 #     print(io, "(", N, " $sPT with mean ", round.(mean(p), sigdigits=3), " and std ", round.(sqrt.(diag(cov(p))), sigdigits=3),")")
 # end
 for mime in (MIME"text/x-tex", MIME"text/x-latex")
     @eval function Base.show(io::IO, ::$mime, p::AbstractParticles)
-        print(io, "\$")
-        show(io, p)
-        print("\$")
+        print(io, "\$"); show(io, p); print("\$")
     end
 end
 
 
 # Two-argument functions
-foreach(register_primitive_multi, (+,-,*,/,//,^, max,min,minmax,mod,mod1,atan,add_sum))
+foreach(register_primitive_multi, [+,-,*,/,//,^,
+max,min,mod,mod1,atan,atand,add_sum,hypot])
 # One-argument functions
 foreach(register_primitive_single, [*,+,-,/,
 exp,exp2,exp10,expm1,
@@ -82,6 +96,36 @@ for PT in (:Particles, :StaticParticles)
             v = fill(n,N)
             $PT{T,N}(v)
         end
+
+        """
+            ℝⁿ2ℝⁿ_function(f::Function, p::AbstractArray{T})
+        Applies  `f : ℝⁿ → ℝⁿ` to an array of particles.
+        """
+        function ℝⁿ2ℝⁿ_function(f::F, p::AbstractArray{$PT{T,N}}) where {F,T,N}
+            individuals = map(1:length(p[1])) do i
+                f(getindex.(p,i))
+            end
+            RT = promote_type(T,eltype(eltype(individuals)))
+            PRT = $PT{RT,N}
+            out = similar(p, PRT)
+            for i = 1:length(p)
+                out[i] = PRT(getindex.(individuals,i))
+            end
+            reshape(out, size(p))
+        end
+
+        function ℝⁿ2ℝⁿ_function(f::F, p::AbstractArray{$PT{T,N}}, p2::AbstractArray{$PT{T,N}}) where {F,T,N}
+            individuals = map(1:length(p[1])) do i
+                f(getindex.(p,i), getindex.(p2,i))
+            end
+            RT = promote_type(T,eltype(eltype(individuals)))
+            PRT = $PT{RT,N}
+            out = similar(p, PRT)
+            for i = 1:length(p)
+                out[i] = PRT(getindex.(individuals,i))
+            end
+            reshape(out, size(p))
+        end
     end
     @forward @eval($PT).particles Statistics.mean, Statistics.cov, Statistics.var, Statistics.std, Statistics.median, Statistics.quantile, Statistics.middle
 end
@@ -97,7 +141,7 @@ for PT in (:WeightedParticles,)
         end
     end
     # Two-argument functions
-    for ff in (+,-,*,/,//,^, max,min,minmax,mod,mod1,atan,add_sum)
+    for ff in (+,-,*,/,//,^, max,min,mod,mod1,atan,add_sum)
         f = nameof(ff)
         @eval begin
             function (Base.$f)(p::$PT{T,N},a::Real...) where {T,N}
@@ -225,6 +269,7 @@ for PT in (:Particles, :StaticParticles, :WeightedParticles)
     end
 
 
+
 end
 
 Base.length(p::AbstractParticles{T,N}) where {T,N} = N
@@ -268,10 +313,28 @@ meanvar(p::AbstractParticles) = var(p)/length(p)
 
 Base.:(==)(p1::AbstractParticles{T,N},p2::AbstractParticles{T,N}) where {T,N} = p1.particles == p2.particles
 Base.:(!=)(p1::AbstractParticles{T,N},p2::AbstractParticles{T,N}) where {T,N} = p1.particles != p2.particles
-Base.:<(a::Real,p::AbstractParticles) = a < mean(p)
-Base.:<(p::AbstractParticles,a::Real) = mean(p) < a
-Base.:<(p::AbstractParticles, a::AbstractParticles, lim=2) = mean(p) < mean(a)
-Base.:(<=)(p::AbstractParticles{T,N}, a::AbstractParticles{T,N}, lim::Real=2) where {T,N} = mean(p) <= mean(a)
+
+
+_comparioson_operator() = USE_UNSAFE_COMPARIONS[] || error("Comparison operators are not well defined for uncertain values and are currently turned off. Call `unsafe_comparisons(true)` to enable comparison operators for particles using the current reduction function $(COMPARISON_FUNCTION[]). Change this function using `set_comparison_function(f)`.")
+
+function Base.:<(a::Real,p::AbstractParticles)
+    _comparioson_operator()
+    a < COMPARISON_FUNCTION[](p)
+end
+function Base.:<(p::AbstractParticles,a::Real)
+    _comparioson_operator()
+    COMPARISON_FUNCTION[](p) < a
+end
+function Base.:<(p::AbstractParticles, a::AbstractParticles)
+    _comparioson_operator()
+    COMPARISON_FUNCTION[](p) < COMPARISON_FUNCTION[](a)
+end
+function Base.:(<=)(p::AbstractParticles{T,N}, a::AbstractParticles{T,N}) where {T,N}
+    _comparioson_operator()
+    COMPARISON_FUNCTION[](p) <= COMPARISON_FUNCTION[](a)
+end
+
+
 
 Base.:≈(a::Real,p::AbstractParticles, lim=2) = abs(mean(p)-a)/std(p) < lim
 Base.:≈(p::AbstractParticles, a::Real, lim=2) = abs(mean(p)-a)/std(p) < lim
@@ -281,11 +344,13 @@ Base.:≉(a,b::AbstractParticles,lim=2) = !(≈(a,b,lim))
 Base.:≉(a::AbstractParticles,b,lim=2) = !(≈(a,b,lim))
 Base.:≉(a::AbstractParticles,b::AbstractParticles,lim=2) = !(≈(a,b,lim))
 
+Base.minmax(x::AbstractParticles,y::AbstractParticles) = (min(x,y), max(x,y))
 
 Base.:!(p::AbstractParticles) = all(p.particles .== 0)
 
 Base.isinteger(p::AbstractParticles) = all(isinteger, p.particles)
 Base.iszero(p::AbstractParticles) = all(iszero, p.particles)
+Base.iszero(p::AbstractParticles, tol) = abs(mean(p.particles)) < tol
 
 
 ≲(a::Real,p::AbstractParticles,lim=2) = (mean(p)-a)/std(p) > lim
@@ -321,20 +386,45 @@ end
 
 Base.sqrt(z::Complex{<: AbstractParticles}) = ℂ2ℂ_function(sqrt, z)
 
-"""
-ℝⁿ2ℝⁿ_function(f::Function, p::AbstractArray{T})
-Applies  `f : ℝⁿ → ℝⁿ` to an array of particles.
-"""
-function ℝⁿ2ℝⁿ_function(f::F, p::AbstractArray{T}) where {F,T<:AbstractParticles}
-    individuals = map(1:length(p[1])) do i
-        f(getindex.(p,i))
+function Base.:(/)(a::Complex{T}, b::Complex{T}) where T<:AbstractParticles
+    are = real(a); aim = imag(a); bre = real(b); bim = imag(b)
+    if mean(abs(bre)) <= mean(abs(bim))
+        if isinf(bre) && isinf(bim)
+            r = sign(bre)/sign(bim)
+        else
+            r = bre / bim
+        end
+        den = bim + r*bre
+        Complex((are*r + aim)/den, (aim*r - are)/den)
+    else
+        if isinf(bre) && isinf(bim)
+            r = sign(bim)/sign(bre)
+        else
+            r = bim / bre
+        end
+        den = bre + r*bim
+        Complex((are + aim*r)/den, (aim - are*r)/den)
     end
-    out = similar(p)
-    for i = 1:length(p)
-        out[i] = T(getindex.(individuals,i))
-    end
-    reshape(out, size(p))
 end
 
 
+
+
 Base.exp(p::AbstractMatrix{<:AbstractParticles}) = ℝⁿ2ℝⁿ_function(exp, p)
+LinearAlgebra.lyap(p1::Matrix{<:AbstractParticles}, p2::Matrix{<:AbstractParticles}) = ℝⁿ2ℝⁿ_function(lyap, p1, p2)
+
+
+# OBS: defining this was a very bad idea, eigvals jump around and get confused with each other etc.
+# function LinearAlgebra.eigvals(p::Matrix{$PT{T,N}}) where {T,N} # Special case to propte types differently
+#     individuals = map(1:length(p[1])) do i
+#         eigvals(getindex.(p,i))
+#     end
+#
+#     PRT = Complex{$PT{T,N}}
+#     out = Vector{PRT}(undef, length(individuals[1]))
+#     for i = eachindex(out)
+#         c = getindex.(individuals,i)
+#         out[i] = complex($PT{T,N}(real(c)),$PT{T,N}(imag(c)))
+#     end
+#     out
+# end

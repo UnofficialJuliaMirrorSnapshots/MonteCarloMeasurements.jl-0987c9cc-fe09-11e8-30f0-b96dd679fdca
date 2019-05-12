@@ -36,6 +36,7 @@ Random.seed!(0)
             @testset "$(repr(PT))" begin
                 @info "Running tests for $PT"
                 p = PT(100)
+                @test_nowarn println(p)
                 @test (p+p+p).particles ≈ 3p.particles # Test 3arg operator
                 @test (p+p+1).particles ≈ 1 .+ 2p.particles # Test 3arg operator
                 @test (1+p+1).particles ≈ 2 .+ p.particles # Test 3arg operator
@@ -48,12 +49,8 @@ Random.seed!(0)
                 @test var(p) ≈ 1 atol=0.2
                 @test meanvar(p) ≈ 1/(length(p)) atol=5e-3
                 @test meanstd(p) ≈ 1/sqrt(length(p)) atol=5e-3
-                @test p <= p
-                @test p >= p
-                @test !(p < p)
-                @test !(p > p)
-                @test (p < 1+p)
-                @test (p+1 > p)
+                @test minmax(1+p,p) == (p, 1+p)
+
                 @test !(p ≲ p)
                 @test !(p ≳ p)
                 @test (p ≲ 2.1)
@@ -76,10 +73,44 @@ Random.seed!(0)
                 @test p ≉ 2.1std(p)
                 @test !(p ≉ 1.9std(p))
 
+                @testset "unsafe comparisons" begin
+                    @test_throws ErrorException p<p
+                    @test_throws ErrorException p>p
+                    @test_throws ErrorException p>=p
+                    @test_throws ErrorException p<=p
+                    @unsafe begin
+                        @test -10 < p
+                        @test p <= p
+                        @test p >= p
+                        @test !(p < p)
+                        @test !(p > p)
+                        @test (p < 1+p)
+                        @test (p+1 > p)
+                    end
+                    @test_throws ErrorException p<p
+                    @test_throws ErrorException p>p
+                    @test_throws ErrorException @unsafe error("") # Should still be safe after error
+                    @test_throws ErrorException p>=p
+                    @test_throws ErrorException p<=p
+                    @unsafe tv = 2
+                    @test tv == 2
+                    @unsafe tv1,tv2 = 1,2
+                    @test (tv1,tv2) == (1,2)
+                    @unsafe tv3,tv4 = range(1, stop=3, length=5), range(1, stop=3, length=5)
+                    @test (tv3,tv4) == (range(1, stop=3, length=5),range(1, stop=3, length=5))
+                    @test MonteCarloMeasurements.COMPARISON_FUNCTION[] == mean
+                    set_comparison_function(median)
+                    @test MonteCarloMeasurements.COMPARISON_FUNCTION[] == median
+                    cp = PT(10)
+                    cmp = @unsafe p < cp
+                    @test cmp == (median(p) < median(cp))
+                    set_comparison_function(mean)
+                end
+
 
                 f = x -> 2x + 10
                 @test 9.6 < mean(f(p)) < 10.4
-                @test 9.6 < f(p) < 10.4
+                # @test 9.6 < f(p) < 10.4
                 @test f(p) ≈ 10
                 @test !(f(p) ≲ 11)
                 @test f(p) ≲ 15
@@ -105,7 +136,7 @@ Random.seed!(0)
                 @test all(A*b .≈ [0,0,0])
 
                 @test all(A\b .≈ zeros(3))
-                @test_nowarn qr(A)
+                @test_nowarn @unsafe qr(A)
                 @test_nowarn Particles(100, MvNormal(2,1)) ./ Particles(100, Normal(2,1))
                 pn = Particles(100, Normal(2,1), systematic=false)
                 @test pn ≈ 2
@@ -177,10 +208,13 @@ Random.seed!(0)
     @testset "transform_moments" begin
         m, Σ   = [1,2], [2 1; 1 4] # Desired mean and covariance
         C = randn(2,2)
-        C = cholesky(C'C).L
+        C = cholesky(C'C + 5I).L
         particles = transform_moments((C*randn(2,500))', m, Σ)
         @test mean(particles, dims=1)[:] ≈ m
         @test cov(particles) ≈ Σ
+        particles = transform_moments((C*randn(2,500))', m, Σ, preserve_latin=true)
+        @test mean(particles, dims=1)[:] ≈ m
+        @test Diagonal(cov(particles)) ≈ Diagonal(Σ) atol=2
     end
 
     @time @testset "gradient" begin
@@ -234,8 +268,15 @@ Random.seed!(0)
         p = 0 ± 1
         @test p[1] == p.particles[1]
         @test_nowarn display(p)
-        @test_nowarn show(p)
-        @test_nowarn show(stdout, MIME"text/x-latex"(), p)
+        @test_nowarn println(p)
+        @test_nowarn show(stdout, MIME"text/x-latex"(), p); println()
+        @test_nowarn println(0p)
+        @test_nowarn show(stdout, MIME"text/x-latex"(), 0p); println()
+
+        @test_nowarn display([p, p])
+        @test_nowarn println([p, p])
+        @test_nowarn println([p, 0p])
+
         @test Particles{Float64,500}(p) == p
         @test Particles{Float64,5}(0) == 0*Particles(5)
         @test length(Particles(100, MvNormal(2,1))) == 2
@@ -256,9 +297,9 @@ Random.seed!(0)
         @test_throws ArgumentError AbstractFloat(p)
         @test AbstractFloat(0p) == 0.0
         @test Particles(500) + Particles(randn(Float32, 500)) isa typeof(Particles(500))
-        @test_nowarn sqrt(complex(p,p)) == 1
         @test isfinite(p)
         @test iszero(0p)
+        @test iszero(p, 0.1)
         @test !iszero(p)
         @test !(!p)
         @test !(0p)
@@ -272,11 +313,19 @@ Random.seed!(0)
         @test eps(p) == eps(Float64)
         A = randn(2,2)
         B = A .± 0
-        @test sum(abs, exp(A) .- exp(B)) < 1e-9
+        @test sum(mean, exp(A) .- exp(B)) < 1e-9
+
+        pp = [1. 0; 0 1] .± 0.0
+        @test lyap(pp,pp) == lyap([1. 0; 0 1],[1. 0; 0 1])
 
         @test intersect(p,p) == union(p,p)
         @test length(intersect(p, 1+p)) < 2length(p)
         @test length(union(p, 1+p)) == 2length(p)
+
+        p = 2 ± 0
+        q = 3 ± 0
+        @test sqrt(complex(p,p)) == sqrt(complex(2,2))
+        @test complex(p,p)/complex(q,q) == complex(2,2)/complex(3,3)
     end
 
     @time @testset "mutation" begin
@@ -411,7 +460,7 @@ Random.seed!(0)
 
         h(x,y) = x .* y'
         Base.Cartesian.@nextract 4 p d-> 0±1
-        @test_broken h([p_1,p_2], [p_3,p_4]) ≈ @bymap  h([p_1,p_2], [p_3,p_4])
+        @test_broken h([p_1,p_2], [p_3,p_4]) ≈ @bymap h([p_1,p_2], [p_3,p_4])
         @test_broken h([p_1,p_2], [p_3,p_4]) ≈ @bypmap h([p_1,p_2], [p_3,p_4])
 
         h2(x,y) = x .* y
