@@ -237,6 +237,7 @@ for PT in (:Particles, :StaticParticles, :WeightedParticles)
         Base.zero(::Type{$PT{T,N}}) where {T,N} = $PT(zeros(eltype(T),N))
         Base.isfinite(p::$PT{T,N}) where {T,N} = isfinite(mean(p))
         Base.round(p::$PT{T,N}, r::RoundingMode, args...; kwargs...) where {T,N} = round(mean(p), r, args...; kwargs...)
+        Base.round(::Type{S}, p::$PT{T,N}, args...; kwargs...) where {S,T,N} = round(S, mean(p), args...; kwargs...)
         function Base.AbstractFloat(p::$PT{T,N}) where {T,N}
             std(p) < eps(T) || throw(ArgumentError("Cannot convert a particle distribution to a number if not all particles are the same."))
             return T(p[1])
@@ -280,6 +281,7 @@ Base.:\(H::MvParticles,p::AbstractParticles) = Matrix(H)\p.particles
 # Base.:\(H,p::MvParticles) = H\Matrix(p)
 
 Base.Broadcast.broadcastable(p::AbstractParticles) = Ref(p)
+Base.setindex!(p::AbstractParticles, val, i::Integer) = setindex!(p.particles, val, i)
 Base.getindex(p::AbstractParticles, i::Integer) = getindex(p.particles, i)
 # Base.getindex(v::MvParticles, i::Int, j::Int) = v[j][i] # Defining this methods screws with show(::MvParticles)
 
