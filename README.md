@@ -321,9 +321,12 @@ The function `ℝⁿ2ℝⁿ_function(f::Function, p::AbstractArray{T})` applies 
 
 ## ℂ → ℂ functions
 These functions do not work with `Particles` out of the box. Special cases are currently implemented for
-- `sqrt`
+- `sqrt`, `exp`, `sin`, `cos`
 
-The function `ℂ2ℂ_function(f::Function, p::AbstractArray{T})` applies `f : ℂ → ℂ ` to `z::Complex{<:AbstractParticles}`.
+We also provide in-place versions of the above functions, e.g.,
+- `sqrt!(out, p)`, `exp!(out, p)`, `sin!(out, p)`, `cos!(out, p)`
+
+The function `ℂ2ℂ_function(f::Function, z)` (`ℂ2ℂ_function!(f::Function, out, z)`) applies `f : ℂ → ℂ ` to `z::Complex{<:AbstractParticles}`.
 
 # Weighted particles
 The type `WeightedParticles` contains an additional field `logweights`. You may modify this field as you see fit, e.g.
@@ -347,6 +350,7 @@ where `y` would be some measurement. After this you can resample the particles u
 | Interested in low probability events / extremas  | Use MonteCarloMeasurements |
 | Limited computational budget | Use Measurements or `StaticParticles` with  [`sigmapoints`](https://github.com/baggepinnen/MonteCarloMeasurements.jl#sigma-points). See benchmark below. |
 | Non-Gaussian input distribution  | Use MonteCarloMeasurements |
+| Calculate tail integrals accurately | This requires some form of [importance sampling](https://en.wikipedia.org/wiki/Importance_sampling#Application_to_simulation), not yet fully supported |
 
 Due to [Jensen's inequality](https://en.wikipedia.org/wiki/Jensen%27s_inequality), linear uncertainty propagation will always underestimate the mean of nonlinear convex functions and overestimate the mean of concave functions. From wikipedia
 > In its simplest form the inequality states that the convex transformation of a mean is less than or equal to the mean applied after convex transformation; it is a simple corollary that the opposite is true of concave transformations.
@@ -442,3 +446,8 @@ function systematic_sample(N, d=Normal(0,1))
 end
 ```
 As we can see, a single random number is generated to seed the entire sample. The samples are then drawn deterministically from the quantile function of the distribution.
+
+## Variational inference
+See blog post by [@cscherrer](https://github.com/cscherrer) for an example of variational inference using `Particles`
+
+https://cscherrer.github.io/post/variational-importance-sampling/
