@@ -20,7 +20,6 @@ For a comparison of uncertainty propagation and nonlinear filtering, see [notes]
 # Basic Examples
 ```julia
 using MonteCarloMeasurements, Distributions
-using MonteCarloMeasurements: ±
 
 julia> 1 ± 0.1
 (500 Particles{Float64,500}: 1.001 ± 0.1)
@@ -98,7 +97,7 @@ The most basic constructor of `Particles` acts more or less like `randn(N)`, i.e
 One can also call (`Particles/StaticParticles`)
 - `Particles(v::Vector)` pre-sampled particles
 - `Particles(N = 500, d::Distribution = Normal(0,1))` samples `N` particles from the distribution `d`.
-- We don't export the ± operator (`\pm`) so as to not mess with [Measurements.jl](https://github.com/JuliaPhysics/Measurements.jl), but you can import it by `import MonteCarloMeasurements.±`. We then have `μ ± σ = μ + σ*Particles(DEFAUL_NUM_PARTICLES)`, where the global constant `DEFAUL_NUM_PARTICLES = 500`. You can change this if you would like, or simply define your own `±` operator like `±(μ,σ) = μ + σ*Particles(my_default_number, my_default_distribution)`. The upside-down operator ∓ (`\mp`) instead creates a `StaticParticles(100)`.
+- The ± operator (`\pm`) (similar to [Measurements.jl](https://github.com/JuliaPhysics/Measurements.jl)). We have `μ ± σ = μ + σ*Particles(DEFAUL_NUM_PARTICLES)`, where the global constant `DEFAUL_NUM_PARTICLES = 500`. You can change this if you would like, or simply define your own `±` operator like `±(μ,σ) = μ + σ*Particles(my_default_number, my_default_distribution)`. The upside-down operator ∓ (`\mp`) instead creates a `StaticParticles(100)`.
 
 **Common univariate distributions are sampled systematically**, meaning that a single random number is drawn and used to seed the sample. This will reduce the variance of the sample. If this is not desired, call `Particles(N, [d]; systematic=false)` The systematic sample can maintain its originally sorted order by calling `Particles(N, permute=false)`, but the default is to permute the sample so as to not have different `Particles` correlate strongly with each other.
 
@@ -233,7 +232,6 @@ An instance of `p::Particles` can be plotted using `plot(p)`, that creates a his
 Below is an example using [ControlSystems.jl](https://github.com/JuliaControl/ControlSystems.jl)
 ```julia
 using ControlSystems, MonteCarloMeasurements, StatsPlots
-import MonteCarloMeasurements: ±
 
 p = 1 ± 0.1
 ζ = 0.3 ± 0.1
@@ -400,7 +398,7 @@ This example shows how to simulate control systems (using [ControlSystems.jl](ht
 
 We also perform some limited benchmarks.
 
-## [Lantin Hypercube Sampling](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/examples/lhs.jl)
+## [Latin Hypercube Sampling](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/examples/lhs.jl)
 We show how to initialize particles with LHS and how to make sure the sample gets the desired moments. We also visualize the statistics of the sample.
 
 ## [How MC uncertainty propagation works](https://github.com/baggepinnen/MonteCarloMeasurements.jl/blob/master/examples/transformed_densities.jl)
