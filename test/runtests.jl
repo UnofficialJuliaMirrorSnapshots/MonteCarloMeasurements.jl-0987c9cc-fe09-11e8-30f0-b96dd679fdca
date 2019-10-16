@@ -334,6 +334,12 @@ Random.seed!(0)
         y = Particles(100)
         @test exp(im*y) ≈ cos(y) + im*sin(y)
         @test complex(p,p)/complex(q,q) == complex(2,2)/complex(3,3)
+
+        p = 2 ± 0.1
+        q = 3 ± 0.1
+        @test wasserstein(p,p,1) == 0
+        @test wasserstein(p,q,1) >= 0
+        @test bootstrap(p) ≈ p
     end
 
     @time @testset "mutation" begin
@@ -469,13 +475,19 @@ Random.seed!(0)
 
         h(x,y) = x .* y'
         Base.Cartesian.@nextract 4 p d-> 0±1
-        @test_broken h([p_1,p_2], [p_3,p_4]) ≈ @bymap h([p_1,p_2], [p_3,p_4])
-        @test_broken h([p_1,p_2], [p_3,p_4]) ≈ @bypmap h([p_1,p_2], [p_3,p_4])
+        @test all(h([p_1,p_2], [p_3,p_4]) .≈ @bymap h([p_1,p_2], [p_3,p_4]))
+        @test all(h([p_1,p_2], [p_3,p_4]) .≈ @bypmap h([p_1,p_2], [p_3,p_4]))
 
         h2(x,y) = x .* y
         Base.Cartesian.@nextract 4 p d-> 0±1
         @test h2([p_1,p_2], [p_3,p_4]) ≈ @bymap  h2([p_1,p_2], [p_3,p_4])
         @test h2([p_1,p_2], [p_3,p_4]) ≈ @bypmap h2([p_1,p_2], [p_3,p_4])
+
+        g(nt::NamedTuple) = nt.x^2 + nt.y^2
+        @test g((x=p_1, y=p_2)) == p_1^2 + p_2^2
+
+        g2(a,nt::NamedTuple) = a + nt.x^2 + nt.y^2
+        @test g2(p_3, (x=p_1, y=p_2)) == p_3 + p_1^2 + p_2^2
 
     end
 

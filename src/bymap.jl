@@ -10,6 +10,7 @@ nparticles(p::Type{<:ParticleArray}) = length(eltype(p))
 
 vecindex(p,i) = getindex(p,i)
 vecindex(p::ParticleArray,i) = getindex.(p,i)
+vecindex(p::NamedTuple,i) = (; Pair.(keys(p), ntuple(j->arggetter(i,p[j]), fieldcount(typeof(p))))...)
 
 function indexof_particles(args)
     inds = findall([a <: SomeKindOfParticles for a in args])
@@ -19,7 +20,6 @@ function indexof_particles(args)
     # TODO: test all same number of particles
 end
 
-
 @generated function Ngetter(args...)
     nargs = length(args)
     inds = indexof_particles(args)
@@ -27,22 +27,23 @@ end
     :($N)
 end
 
-@generated function arggetter(i,args...)
-    nargs = length(args)
-    inds = indexof_particles(args)
-    quote
-        @ntuple $nargs j->j ∈ $inds ? vecindex(args[j],i) : args[j] # Must interpolate in vars that were created outside of the quote, but not arguments to the generated function
-    end
+function arggetter(i,a::Union{SomeKindOfParticles, NamedTuple})
+    vecindex(a,i)
 end
 
+function arggetter(i,a)
+    a
+end
 
 macro bymap(ex)
     @capture(ex, f_(args__)) || error("expected a function call")
     fsym = string(f)
+    nargs = length(args)
     quote
         N = Ngetter($(esc.(args)...))
         individuals = map(1:N) do i
-            argsi = arggetter(i,$(esc.(args)...))
+            eargs = ($(esc.(args)...),)
+            argsi = ntuple(j->arggetter(i,eargs[j]), $nargs)
             $(esc(f))(argsi...)
         end
         if ndims(individuals[1]) == 0
@@ -57,13 +58,16 @@ macro bymap(ex)
     end
 end
 
+
 macro bypmap(ex)
     @capture(ex, f_(args__)) || error("expected a function call")
     fsym = string(f)
+    nargs = length(args)
     quote
         N = Ngetter($(esc.(args)...))
         individuals = pmap(1:N) do i
-            argsi = arggetter(i,$(esc.(args)...))
+            eargs = ($(esc.(args)...),)
+            argsi = ntuple(j->arggetter(i,eargs[j]), $nargs)
             $(esc(f))(argsi...)
         end
         if ndims(individuals[1]) == 0
